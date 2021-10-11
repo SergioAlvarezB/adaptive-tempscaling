@@ -4,6 +4,5 @@
 **/.ipynb_checkpoints
 
 # Ignore data
-data
-experiments
-/models/
+data/
+trained_models/
