@@ -168,3 +168,33 @@ class AdaptiveTempScalingv3(TempScaling):
             x = torch.as_tensor(x, dtype=torch.float32)
             
         return softmax(self.forward(x), dim=-1)
+
+
+class LeNet5(nn.Module):
+
+    def __init__(self, dim, input_channels=1):
+        super(LeNet5, self).__init__()
+        
+        self.cnn = nn.Sequential(            
+            nn.Conv2d(input_channels, 6, kernel_size=5),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2),
+            nn.Conv2d(6, 16, kernel_size=5),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2),
+            nn.Conv2d(16, 120, kernel_size=3),
+            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+            nn.Tanh()
+        )
+
+        self.fc = nn.Sequential(
+            nn.Linear(120, 84),
+            nn.Tanh(),
+            nn.Linear(84, dim),
+        )
+
+    def forward(self, x):
+        x = self.cnn(x)
+        x = torch.flatten(x, 1)
+        z = self.fc(x)
+        return softmax(z, dim=1)
