@@ -3,7 +3,7 @@ import time
 import numpy as np
 import torch
 from torch import nn
-from torch.nn.functional import softmax, cross_entropy, softplus, tanh
+from torch.nn.functional import softmax, cross_entropy
 
 
 class NanValues(Exception):
@@ -19,6 +19,12 @@ class TempScaling(nn.Module):
         self.T = nn.Parameter(torch.Tensor([1.0]))
 
     def fit(self, X, y, v=False):
+
+        if not torch.is_tensor(X):
+            X = torch.as_tensor(X, dtype=torch.float32)
+
+        if not torch.is_tensor(y):
+            y = torch.as_tensor(y, dtype=torch.long)
 
         optim = torch.optim.SGD(self.parameters(), lr=1e-1)
 
@@ -60,10 +66,10 @@ class TempScaling(nn.Module):
         return softmax(self.forward(x), dim=-1)
 
 
-class AdaptiveTempScalingv3(TempScaling):
+class AdaptiveTempScaling(TempScaling):
 
     def __init__(self, dim):
-        super(AdaptiveTempScalingv3, self).__init__()
+        super(AdaptiveTempScaling, self).__init__()
 
         # Init params
         self.b = nn.Parameter(torch.Tensor([1.0]))
@@ -72,6 +78,12 @@ class AdaptiveTempScalingv3(TempScaling):
         self.dim = dim
 
     def fit(self, X, Y, epochs=10000, batch_size=None, lr=1e-5, v=False, weight_decay=0.1):
+
+        if not torch.is_tensor(X):
+            X = torch.as_tensor(X, dtype=torch.float32)
+
+        if not torch.is_tensor(Y):
+            Y = torch.as_tensor(Y, dtype=torch.long)
 
         # Compute optimum T first
         optim = torch.optim.SGD([self.b], lr=1e-1)
@@ -156,11 +168,11 @@ class AdaptiveTempScalingv3(TempScaling):
 
     def forward(self, x):
         # T = nn.functional.relu(x @ self.W) + self.b
-        T = (tanh((x @ self.W)/self.dim) + 1) * self.b
+        T = (torch.tanh((x @ self.W)/self.dim) + 1) * self.b
         return x/T.view(-1, 1)
 
     def get_T(self, x):
-        T = (tanh((x @ self.W)/self.dim) + 1) * self.b
+        T = (torch.tanh((x @ self.W)/self.dim) + 1) * self.b
         return T.detach().numpy()
 
     def predictive(self, x):
@@ -197,4 +209,7 @@ class LeNet5(nn.Module):
         x = self.cnn(x)
         x = torch.flatten(x, 1)
         z = self.fc(x)
-        return softmax(z, dim=1)
+        return z
+
+    def predictive(self, x):
+        return softmax(self.forward(x), dim=1)

@@ -68,7 +68,7 @@ def train_model(init_model,
                                         weight_decay=weight_decay)
             CE = torch.nn.functional.cross_entropy
 
-            lr_sched = CosineAnnealingLR(optimizer, T_max=(len(train_dataloader)*epochs))
+            lr_sched = CosineAnnealingLR(optimizer, T_max=epochs)
 
             t = time.time()
 
@@ -92,11 +92,13 @@ def train_model(init_model,
                     optimizer.zero_grad()
                     _loss.backward()
                     optimizer.step()
-                    lr_sched.step()
+                    
                 
                 acc[-1] /= 40000 # Size of training set
                 loss[-1] /= 40000
             
+
+                lr_sched.step()
                 
                 if e%5==1:  
                     print('End of epoch: {:d}'.format(e))

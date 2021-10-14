@@ -20,7 +20,7 @@ transforms_data=transforms.Compose([
 ])
 
 train = CIFAR10(CIFAR10_PATH, train=True, download=True, transform=transforms_data)
-test = CIFAR10(CIFAR10_PATH, transform=transforms_data)
+test = CIFAR10(CIFAR10_PATH, train=False, transform=transforms_data)
 
 
 
