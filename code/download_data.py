@@ -8,8 +8,12 @@ from torchvision import transforms
 from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 
+from utils import check_path
+
 
 CIFAR10_PATH = '../data/CIFAR10'
+
+check_path(CIFAR10_PATH)
 
 transforms_data=transforms.Compose([
     transforms.ToTensor(),
@@ -24,7 +28,7 @@ test = CIFAR10(CIFAR10_PATH, transform=transforms_data)
 # Divide into validation and train splits
 N = len(train)
 
-np.random.seed(1)
+np.random.seed(10)
 rand_ix = np.random.permutation(N)
 
 ix_train, ix_val = rand_ix[:40000], rand_ix[40000:]
@@ -32,8 +36,8 @@ ix_train, ix_val = rand_ix[:40000], rand_ix[40000:]
 train_data = data.Subset(train, ix_train)
 val_data = data.Subset(train, ix_val)
 
-train = data.DataLoader(train_data, batch_size=40000, shuffle=True)
-val = data.DataLoader(val_data, batch_size=10000, shuffle=True)
+train = data.DataLoader(train_data, batch_size=40000)
+val = data.DataLoader(val_data, batch_size=10000)
 test = data.DataLoader(test, batch_size=1000)
 
 X_train, y_train = next(iter(train))

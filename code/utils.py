@@ -1,5 +1,11 @@
+from pathlib import Path
+
 import torch
 
+
+def check_path(path):
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
 
 class NumpyDataset(torch.utils.data.Dataset):
     """Class to create a Pytorch Dataset from Numpy data"""

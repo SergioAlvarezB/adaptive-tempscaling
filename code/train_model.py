@@ -5,6 +5,7 @@ import argparse
 
 import numpy as np
 import torch
+from torch.cuda import init
 
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -12,7 +13,7 @@ from torchvision.models import resnet50
 import torchvision.transforms as transforms
 from models import LeNet5
 
-from utils import NumpyDataset
+from utils import NumpyDataset, check_path
 
 
 CIFAR10_PATH = '../data/CIFAR10'
@@ -34,6 +35,7 @@ def parse_arguments():
                         default=[1e-4, 1e-3], type=float)
     parser.add_argument('-wd', '--weight_decay', nargs='+', help='Values of weight decay to use',
                         default=np.geomspace(1e-4, 1e-2, 3), type=float)
+    parser.add_argument('--pretrained', help='If set loads pretrained model', action='store_true')
 
     return parser.parse_args()
 
@@ -128,11 +130,14 @@ def train_model(init_model,
 
     return best_model
 
-def predict_logits(model, dataloader):
-    
+def predict_logits(model, dataloader, dev):
+
+    model.eval()
+    model.to(dev)
     logits = []
     for x, _ in dataloader:
-        logits.append(model(x).detach().numpy())
+        x = x.to(dev)
+        logits.append(model(x).detach().cpu().numpy())
      
     return np.vstack(logits)
 
@@ -146,11 +151,7 @@ def main():
     if conf.model not in MODELS:
         raise ArgumentError('model not recognized, must be one of {}\n'.format(MODELS))
 
-    if not os.path.exists(SAVE_PATH):
-        os.mkdir(SAVE_PATH)
-
-    if not os.path.exists(os.path.join(SAVE_PATH, conf.model)):
-        os.mkdir(os.path.join(SAVE_PATH, conf.model))
+    check_path(os.path.join(SAVE_PATH, conf.model))
 
     if conf.model == 'resnet50':
         def init_model():
@@ -171,7 +172,6 @@ def main():
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ]) #transforms are different for train and test
     cifar10_transforms_test=transforms.Compose([
-        transforms.ToPILImage(),
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
@@ -193,14 +193,19 @@ def main():
     train_dataloader = DataLoader(train_data, batch_size=conf.batch_size, shuffle=True)
     val_dataloader = DataLoader(val_data, batch_size=conf.batch_size)
 
-
-    net = train_model(init_model,
-                      train_dataloader,
-                      val_dataloader,
-                      lrs=conf.lr,
-                      weight_decays=conf.weight_decay,
-                      dev=dev)
-    torch.save(net, os.path.join(SAVE_PATH, conf.model+'.pth'))
+    if not conf.pretrained:
+        net = train_model(init_model,
+                        train_dataloader,
+                        val_dataloader,
+                        lrs=conf.lr,
+                        weight_decays=conf.weight_decay,
+                        dev=dev)
+        torch.save(net, os.path.join(SAVE_PATH, conf.model+'.pth'))
+    else:
+        try:
+            net = torch.load(os.path.join(SAVE_PATH, conf.model+'.pth'))
+        except Exception as e:
+            raise e
 
 
     # Precompute output-logits
@@ -209,9 +214,9 @@ def main():
 
     train_data_test = NumpyDataset(X_train, y_train, transform=cifar10_transforms_test)
     train_dataloader_test = DataLoader(train_data_test, batch_size=conf.batch_size)
-    train_logits = predict_logits(net, train_dataloader_test)
-    val_logits = predict_logits(net, val_dataloader)
-    test_logits = predict_logits(net, test_dataloader)
+    train_logits = predict_logits(net, train_dataloader_test, dev=dev)
+    val_logits = predict_logits(net, val_dataloader, dev=dev)
+    test_logits = predict_logits(net, test_dataloader, dev=dev)
 
     print('Accuracy on the different sets:')
     print('\t Train set: {:.2f}'.format(100.0 * np.mean(np.argmax(train_logits, axis=1) == y_train)))
