@@ -35,6 +35,35 @@ class NumpyDataset(torch.utils.data.Dataset):
         return ima, target
 
 
+def calib_split(X, y, conf_th=None, apply_softmax=True):
+    """Divides data into (high/low confidence)x(correct/incorrect)"""
+    if torch.is_tensor(X):
+        X = X.detach().cpu().numpy()
+
+    if torch.is_tensor(y):
+        y = y.detach().cpu().numpy()
+
+    correct = np.argmax(X, axis=1)==y
+
+    if conf_th is None:
+        conf_th = np.mean(correct)
+
+    if apply_softmax:
+        X = softmax(X, axis=1)
+
+    confs = np.max(X, axis=1)
+
+    high_conf = confs > conf_th
+
+    hc = high_conf & correct
+    lc = (~high_conf) & correct
+    hi = high_conf & (~correct)
+    li = (~high_conf) & (~correct)
+
+    return hc, lc, hi, li
+
+
+
 def compare_results(predictions, target, M=15, from_logits=True):
 
     res = {}
@@ -52,7 +81,7 @@ def compare_results(predictions, target, M=15, from_logits=True):
         else:
             probs = preds
 
-        _preds = np.max(preds, axis=1)
+        _preds = np.argmax(preds, axis=1)
         acc = np.mean(_preds == target)
         ece = compute_ece(probs, target, M=M)
         bri = compute_brier(probs, target)
@@ -78,8 +107,10 @@ def compute_ece(probs, target, M=15):
     if torch.is_tensor(target):
         target = target.detach().cpu().numpy()
 
-    confs = probs[np.arange(probs.shape[0]), target]
-    preds = np.max(probs, axis=1)
+    N = probs.shape[0]
+
+    confs = np.max(probs, axis=1)
+    preds = np.argmax(probs, axis=1)
 
     # Generate intervals
     limits = np.linspace(0, 1, num=M+1)
@@ -88,17 +119,21 @@ def compute_ece(probs, target, M=15):
     ece = 0
 
     for low, high in zip(lows, highs):
-        if not any((low < confs) & (confs <= high)):
+
+        ix = (low < confs) & (confs <= high)
+        n = np.sum(ix)
+        if n<1:
             continue
-        curr_preds = preds[(low < confs) & (confs <= high)]
-        curr_confs = confs[(low < confs) & (confs <= high)]
-        curr_target = target[(low < confs) & (confs <= high)]
+
+        curr_preds = preds[ix]
+        curr_confs = confs[ix]
+        curr_target = target[ix]
 
         curr_acc = np.mean(curr_preds == curr_target)
 
-        ece += curr_target.size*np.abs(np.mean(curr_confs)-curr_acc)
+        ece += n*np.abs(np.mean(curr_confs)-curr_acc)
 
-    ece /= probs.shape[0]
+    ece /= N
 
     return ece
 

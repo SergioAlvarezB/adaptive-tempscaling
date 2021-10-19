@@ -8,8 +8,8 @@ import torch
 from torch.cuda import init
 
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torchvision.models import resnet50
+from torch.optim.lr_scheduler import MultiStepLR
+from torchvision.models import resnet50, resnet101, densenet121
 import torchvision.transforms as transforms
 from models import LeNet5
 
@@ -18,7 +18,7 @@ from utils import NumpyDataset, check_path
 
 CIFAR10_PATH = '../data/CIFAR10'
 SAVE_PATH = '../trained_models/CIFAR10/'
-MODELS = ['resnet50', 'lenet5']
+MODELS = ['densenet121', 'resnet101', 'resnet50', 'lenet5']
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -68,7 +68,7 @@ def train_model(init_model,
                                         weight_decay=weight_decay)
             CE = torch.nn.functional.cross_entropy
 
-            lr_sched = CosineAnnealingLR(optimizer, T_max=epochs)
+            lr_sched = MultiStepLR(optimizer, milestones=[100, 150])
 
             t = time.time()
 
@@ -78,14 +78,16 @@ def train_model(init_model,
                 loss.append(0)
                 acc.append(0)
                 net.train()
+                N = 0
                 for x, y in train_dataloader:
                     x, y = x.to(dev), y.to(dev)
 
                     n = x.shape[0]
+                    N += n
 
                     preds = net(x)
-                    _loss = CE(preds, y, reduction='sum')
-                    loss[-1] += _loss.item()
+                    _loss = CE(preds, y, reduction='mean')
+                    loss[-1] += n*_loss.item()
                     _, _preds = torch.max(preds, dim=1)
                     acc[-1] += torch.sum((_preds == y).float()).item() * 100.
                     
@@ -94,11 +96,11 @@ def train_model(init_model,
                     optimizer.step()
                     
                 
-                acc[-1] /= 40000 # Size of training set
-                loss[-1] /= 40000
+                acc[-1] /= N # Size of training set
+                loss[-1] /= N
             
-
-                lr_sched.step()
+                if e <= int(0.8*epochs):
+                    lr_sched.step()
                 
                 if e%5==1:  
                     print('End of epoch: {:d}'.format(e))
@@ -108,8 +110,11 @@ def train_model(init_model,
             net.eval()
             val_loss = 0
             val_acc = 0
+            Nval = 0
             for x, y in val_dataloader:
                 x = x.to(dev)
+
+                Nval += x.shape[0]
 
                 preds = net(x).detach().cpu()
                 _loss = CE(preds, y, reduction='sum')
@@ -117,8 +122,8 @@ def train_model(init_model,
                 _, _preds = torch.max(preds, dim=1)
                 val_acc += torch.sum((_preds == y).float()).item() * 100.
             
-            val_acc /= 10000 # Size of validation set
-            val_loss /= 10000
+            val_acc /= Nval # Size of validation set
+            val_loss /= Nval
             print('End of epoch: {:d}'.format(e))
             print("Time: {:.3f}s; train loss: {:.3f}, validation loss: {:.3f}".format(time.time() - t, loss[-1], val_loss))
             print("\t train accuracy: {:.2f}%, validation accuracy: {:.2f}%".format(acc[-1], val_acc))
@@ -155,11 +160,24 @@ def main():
 
     check_path(os.path.join(SAVE_PATH, conf.model))
 
+    if conf.model == 'densenet121':
+        def init_model():
+            net = densenet121()
+            net.fc = torch.nn.Linear(1024, 10)
+            return net
+
+    if conf.model == 'resnet101':
+        def init_model():
+            net = resnet101()
+            net.fc = torch.nn.Linear(2048 , 10)
+            return net
+
     if conf.model == 'resnet50':
         def init_model():
             net = resnet50()
             net.fc = torch.nn.Linear(2048 , 10)
             return net
+
     elif conf.model == 'lenet5':
         def init_model():
             net = LeNet5(dim=10, input_channels=3)
@@ -188,6 +206,9 @@ def main():
     X_test = np.load(os.path.join(CIFAR10_PATH, 'test_imas.npy'))
     y_test = np.load(os.path.join(CIFAR10_PATH, 'test_labels.npy'))
 
+    N = X_train.shape[0]
+    Nval = X_val.shape[0]
+
 
     train_data = NumpyDataset(X_train, y_train, transform=cifar10_transforms_train)
     val_data = NumpyDataset(X_val, y_val, transform=cifar10_transforms_test)
@@ -200,6 +221,7 @@ def main():
                         train_dataloader,
                         val_dataloader,
                         lrs=conf.lr,
+                        epochs=conf.epochs,
                         weight_decays=conf.weight_decay,
                         dev=dev)
         torch.save(net, os.path.join(SAVE_PATH, conf.model+'.pth'))

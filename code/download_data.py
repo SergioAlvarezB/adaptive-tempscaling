@@ -1,5 +1,8 @@
 import os
+import sys
+import requests
 import shutil
+import tarfile
 
 import numpy as np
 
@@ -12,8 +15,37 @@ from utils import check_path
 
 
 CIFAR10_PATH = '../data/CIFAR10'
+CIFAR10C_PATH = '../data/CIFAR10_C'
+
+CIFAR10C_URL = 'https://zenodo.org/record/2535967/files/CIFAR-10-C.tar'
 
 check_path(CIFAR10_PATH)
+check_path(CIFAR10C_PATH)
+
+
+# Download CIFAR10-C
+target_path = os.path.join(CIFAR10C_PATH, 'CIFAR-10-C.tar')
+print('Downloading CIFAR10-C...')
+with open(target_path, 'wb') as f:
+    with requests.get(CIFAR10C_URL, allow_redirects=True, stream=True) as resp:
+        total_length = resp.headers.get('content-length')
+        dl = 0
+        total_length = int(total_length)
+        for chunk in resp.iter_content(chunk_size=4096):
+            if chunk:
+                dl += len(chunk)
+                f.write(chunk)
+                done = int(50 * dl / total_length)
+                sys.stdout.write("\r[{:s}{:s}{:s}] {:.2f}%".format('=' * done, '>', ' ' * (50-done), (dl/total_length)*100) )    
+                sys.stdout.flush()
+
+# Extract
+print('Extracting CIFAR10-C...')
+tarf = tarfile.open(target_path, 'r')
+tarf.extractall(CIFAR10C_PATH)
+tarf.close()
+os.remove(target_path)
+print('Done')
 
 transforms_data=transforms.Compose([
     transforms.ToTensor(),
@@ -31,14 +63,14 @@ N = len(train)
 np.random.seed(10)
 rand_ix = np.random.permutation(N)
 
-ix_train, ix_val = rand_ix[:40000], rand_ix[40000:]
+ix_train, ix_val = rand_ix[:45000], rand_ix[45000:]
 
 train_data = data.Subset(train, ix_train)
 val_data = data.Subset(train, ix_val)
 
-train = data.DataLoader(train_data, batch_size=40000)
-val = data.DataLoader(val_data, batch_size=10000)
-test = data.DataLoader(test, batch_size=1000)
+train = data.DataLoader(train_data, batch_size=45000)
+val = data.DataLoader(val_data, batch_size=5000)
+test = data.DataLoader(test, batch_size=10000)
 
 X_train, y_train = next(iter(train))
 X_val, y_val = next(iter(val))
