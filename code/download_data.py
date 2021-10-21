@@ -15,7 +15,7 @@ from utils import check_path
 
 
 CIFAR10_PATH = '../data/CIFAR10'
-CIFAR10C_PATH = '../data/CIFAR10_C'
+CIFAR10C_PATH = '../data'
 
 CIFAR10C_URL = 'https://zenodo.org/record/2535967/files/CIFAR-10-C.tar'
 

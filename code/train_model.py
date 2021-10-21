@@ -13,7 +13,7 @@ from torchvision.models import resnet50, resnet101, densenet121
 import torchvision.transforms as transforms
 from models import LeNet5
 
-from utils import NumpyDataset, check_path
+from utils import NumpyDataset, check_path, predict_logits
 
 
 CIFAR10_PATH = '../data/CIFAR10'
@@ -38,7 +38,6 @@ def parse_arguments():
     parser.add_argument('--pretrained', help='If set loads pretrained model', action='store_true')
 
     return parser.parse_args()
-
 
 
 
@@ -137,16 +136,7 @@ def train_model(init_model,
 
     return best_model
 
-def predict_logits(model, dataloader, dev):
 
-    model.eval()
-    model.to(dev)
-    logits = []
-    for x, _ in dataloader:
-        x = x.to(dev)
-        logits.append(model(x).detach().cpu().numpy())
-     
-    return np.vstack(logits)
 
 
 def main():
@@ -163,7 +153,7 @@ def main():
     if conf.model == 'densenet121':
         def init_model():
             net = densenet121()
-            net.fc = torch.nn.Linear(1024, 10)
+            net.classifier = torch.nn.Linear(1024, 10)
             return net
 
     if conf.model == 'resnet101':
