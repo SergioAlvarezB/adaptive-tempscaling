@@ -5,7 +5,6 @@ import argparse
 
 import numpy as np
 import torch
-from torch.cuda import init
 
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import MultiStepLR

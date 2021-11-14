@@ -3,11 +3,116 @@ import time
 import numpy as np
 import torch
 from torch import nn
-from torch.nn.functional import softmax, cross_entropy
+from torch.nn.functional import softmax, cross_entropy, softplus
+
+from utils import torch_entropy, binByEntropy
 
 
 class NanValues(Exception):
     """"Custom exception to signal failed training"""
+
+
+## Non-Parametric Temp-Scaling
+
+
+class BTS:
+
+    def __init__(self, M=50):
+        self.M = M
+
+    def fit(self, X, y, v=False):
+
+        with torch.no_grad():
+            lims = self.get_lims(X)
+
+        
+
+
+
+    def get_lims(self, logits):
+
+        confs = torch.max(softmax(logits, dim=1), dim=1)
+
+        low_confs = confs[confs<0.999]
+
+        lims = np.quantile(low_confs.detach().cpu().numpy(), np.linspace(0, 1, self.M))
+
+        lims = np.hstack((lims, [1]))
+
+        return lims
+
+
+
+
+class HistTS:
+
+    def __init__(self, M=15, mode='same', normalize=True):
+        self.M = M
+        assert mode in ['log', 'same']
+        self.mode = mode
+        self.Ts = None
+        self.normalize = normalize
+
+    def fit(self, X, y, M=None, mode=None, v=False):
+
+        if M is not None:
+            self.M = M
+        if mode is not None:
+            assert mode in ['log', 'same']
+            self.mode = mode
+
+        ixs, lims = binByEntropy(X, M=self.M, mode=self.mode, normalize=self.normalize)
+        self.lims = lims
+
+        self.Ts = np.ones(self.M)
+        for i, ix in enumerate(ixs):
+            if any(ix):
+                try:
+                    ts_aux = TempScaling()
+                    ts_aux.fit(X[ix], y[ix], v=v);
+                    self.Ts[i] = ts_aux.T.detach().numpy()
+                except Exception as e:
+                    continue
+
+    def __call__(self, x):
+        ## Compute entropy of samples
+        Hs = torch_entropy(x)
+
+        N, dim = x.shape
+
+        if self.normalize:
+            Hs /= np.log(dim)
+        
+        X_cal = torch.zeros_like(x) + x
+        
+        for i, (low, high) in enumerate(zip(self.lims[:-1], self.lims[1:])):
+            ix = (low<=Hs) & (Hs<high)
+            if any(ix):
+                X_cal[ix] = x[ix]/self.Ts[i]
+                
+        return X_cal
+
+    def get_T(self, x):
+        if not torch.is_tensor(x):
+            x = torch.as_tensor(x, dtype=torch.float32)
+
+        H_val = torch_entropy(x)
+        
+        Ts = torch.zeros(x.shape[0])
+        
+        for i, (low, high) in enumerate(zip(self.lims[:-1], self.lims[1:])):
+            ix = (low<=H_val) & (H_val<high)
+            if any(ix):
+                Ts[ix] = self.Ts[i]
+
+        return Ts.detach().numpy()
+
+    def predictive(self, x):
+        if not torch.is_tensor(x):
+            x = torch.as_tensor(x, dtype=torch.float32)
+            
+        return softmax(self.__call__(x), dim=-1)
+
 
 
 class TempScaling(nn.Module):
@@ -18,7 +123,7 @@ class TempScaling(nn.Module):
         # Init temperature
         self.T = nn.Parameter(torch.Tensor([1.0]))
 
-    def fit(self, X, y, v=False):
+    def fit(self, X, y, lr=1e-1, v=False, cte_epochs=5):
 
         N = X.shape[0]
 
@@ -28,11 +133,11 @@ class TempScaling(nn.Module):
         if not torch.is_tensor(y):
             y = torch.as_tensor(y, dtype=torch.long)
 
-        optim = torch.optim.SGD(self.parameters(), lr=1e-1)
+        optim = torch.optim.SGD(self.parameters(), lr=lr)
 
         self.train()
 
-        _T = 1.0
+        _T = np.zeros(cte_epochs)
         e=0
         t0 = time.time()
         while True:
@@ -49,17 +154,16 @@ class TempScaling(nn.Module):
                 print('On epoch: {:d}, NLL: {:.3e}, '.format(e, N*loss.item())
                      + 'Temp: {:.3f}, '.format(self.T.item())
                       + 'at time: {:.2f}s'.format(time.time() - t0), end="\r")
+            _T[e%cte_epochs] = self.T.item()
             e += 1
 
-            if np.abs(self.T.item()-_T)<1e-7:
+            if e>cte_epochs and np.mean(np.abs(np.diff(_T)))<1e-7:
                 break
-            else:
-                _T = self.T.item()
 
         return self.forward(X)
 
     def forward(self, x):
-        return x/self.T
+        return x/torch.abs(self.T)
 
     def predictive(self, x):
         if not torch.is_tensor(x):
@@ -68,39 +172,35 @@ class TempScaling(nn.Module):
         return softmax(self.forward(x), dim=-1)
 
 
-class AdaptiveTempScaling(TempScaling):
-
+class EnsembleTS(nn.Module):
     def __init__(self, dim):
-        super(AdaptiveTempScaling, self).__init__()
-
+        super(EnsembleTS, self).__init__()
         # Init params
-        self.b = nn.Parameter(torch.Tensor([1.0]))
-        self.W = nn.Parameter(torch.randn(dim)/(100*dim))
 
+        self.T = nn.Parameter(torch.Tensor([1.0]))
+        self.W = nn.Parameter(torch.rand(3))
         self.dim = dim
 
-    def fit(self, X, Y, epochs=10000, batch_size=None, lr=1e-2, v=False, weight_decay=0.1):
+    def fit(self, X, y, lr=1e-2, v=False, cte_epochs=5):
 
         N = X.shape[0]
 
         if not torch.is_tensor(X):
             X = torch.as_tensor(X, dtype=torch.float32)
 
-        if not torch.is_tensor(Y):
-            Y = torch.as_tensor(Y, dtype=torch.long)
+        if not torch.is_tensor(y):
+            y = torch.as_tensor(y, dtype=torch.long)
 
-        # Compute optimum T first
-        optim = torch.optim.SGD([self.b], lr=1e-1)
+        optim = torch.optim.SGD(self.parameters(), lr=lr)
 
         self.train()
 
-        _T = 1.0
+        _T = np.zeros(cte_epochs)
         e=0
         t0 = time.time()
-        if v:
-            print('Finding optimum Temperature')
+        print('Finding optimum T')
         while True:
-            loss = cross_entropy(X/self.b, Y, reduction='mean')
+            loss = cross_entropy(self.forward(X), y, reduction='mean')
 
             if loss != loss:
                 raise NanValues("Aborting training due to nan values")
@@ -111,76 +211,27 @@ class AdaptiveTempScaling(TempScaling):
 
             if v and e % 10 == 4:
                 print('On epoch: {:d}, NLL: {:.3e}, '.format(e, N*loss.item())
-                     + 'Temp: {:.3f}, '.format(self.b.item())
+                     + 'Temp: {:.3f}, '.format(self.T.item())
                       + 'at time: {:.2f}s'.format(time.time() - t0), end="\r")
+            _T[e%cte_epochs] = self.T.item()
             e += 1
 
-            if np.abs(self.b.item()-_T)<1e-7:
+            if e>cte_epochs and np.mean(np.abs(np.diff(_T)))<1e-7:
                 break
-            else:
-                _T = self.b.item()
-
-        optim = torch.optim.SGD([self.W], lr=lr, weight_decay=weight_decay)
-
-        if batch_size is None:
-            batch_size=N
-        n_steps = int(np.ceil(N/batch_size))
-
-        nll = 0
-
-        e=0
-        t0 = time.time()
-        if v:
-            print('\n')
-            print('Adapting Weight vector')
-        while e<epochs:
-
-            # Shuffle data before each epoch
-            perm = np.random.permutation(N)
-            X = X[perm]
-            Y = Y[perm]
-
-            nll = 0
-
-            for s in range(n_steps):
-                x = X[s*batch_size:min((s+1)*batch_size, N)]
-                y = Y[s*batch_size:min((s+1)*batch_size, N)]
-
-                n = x.shape[0]
-
-                logits = self.forward(x)
-
-                _nll = cross_entropy(logits, y, reduction='mean')
-
-                if _nll != _nll:
-                    raise NanValues("Aborting training due to nan values")
-
-                # Train step
-                optim.zero_grad()
-                _nll.backward()
-                optim.step()
-
-                nll += n*_nll.item()
-
-            if v and e % 10 == 4:
-                print('On epoch: {:d}, loss: {:.3e}, '.format(e, nll)
-                      + 'at time: {:.2f}s'.format(time.time() - t0), end="\r")
-            e += 1
-        print('\n')
 
         return self.forward(X)
 
     def forward(self, x):
-        # T = nn.functional.relu(x @ self.W) + self.b
-        T = (torch.tanh((x @ self.W)/self.dim) + 1) * self.b
-        return x/T.view(-1, 1)
+        # Obtain Weights
+        W_u = softplus(self.W)
+        W = W_u/torch.sum(W_u)
 
-    def get_T(self, x):
-        if not torch.is_tensor(x):
-            x = torch.as_tensor(x, dtype=torch.float32)
-            
-        T = (torch.tanh((x @ self.W)/self.dim) + 1) * self.b
-        return T.detach().numpy()
+        x1 = softmax(x/self.T, dim=1)
+        x2 = softmax(x, dim=1)
+
+        c = W[0]*x1 + W[1]*x2 + W[2]*(1/self.dim)
+
+        return torch.log(c)
 
     def predictive(self, x):
         if not torch.is_tensor(x):
@@ -188,6 +239,168 @@ class AdaptiveTempScaling(TempScaling):
             
         return softmax(self.forward(x), dim=-1)
 
+# #### Generic Temp-Scaling model
+
+class AdaTS(nn.Module):
+    
+    def __init__(self, modelT):
+        super(AdaTS, self).__init__()
+
+        self.prescale = modelT.prescale
+        if self.prescale:
+            # Init temperature
+            self.T = nn.Parameter(torch.Tensor([1.0]))
+
+        self.modelT = modelT
+
+    def forward(self, x, pretrain=False):
+        if pretrain:
+            return x/self.T
+            
+        Ts = self.modelT(x)
+        if self.prescale:
+            Ts *= self.T
+
+        return x/Ts.view(-1, 1)
+
+    def get_T(self, x):
+        if not torch.is_tensor(x):
+            x = torch.as_tensor(x, dtype=torch.float32)
+
+        Ts = self.modelT(x)
+
+        if self.prescale:
+            Ts *= self.T
+
+        return Ts.detach().numpy()
+
+    def predictive(self, x):
+        if not torch.is_tensor(x):
+            x = torch.as_tensor(x, dtype=torch.float32)
+            
+        return softmax(self.forward(x), dim=-1)
+
+
+# #### Temperature Models
+
+class ScaleT(nn.Module):
+    
+    def __init__(self, dim):
+        super(ScaleT, self).__init__()
+        
+        self.prescale=True
+
+        self.b = nn.Parameter(torch.Tensor([1.0]))
+        self.W = nn.Parameter(torch.randn(dim)/(100*dim))
+        self.dim = dim
+        
+    def forward(self, x):
+        T = (torch.tanh((x @ self.W)/self.dim + self.b) + 1)
+        return T
+
+
+class LinearT(nn.Module):
+    def __init__(self, dim, norm=True):
+        super(LinearT, self).__init__()
+        self.prescale=False
+        # Init params
+        self.b = nn.Parameter(torch.Tensor([1.0]))
+        self.W = nn.Parameter(torch.randn(dim)/(dim))
+
+        self.dim = dim
+        self.norm = norm
+        
+    def forward(self, x):
+        if self.norm:
+            W = self.W/torch.norm(self.W)
+        else:
+            W = self.W
+        T = softplus((x @ W) + self.b)
+        return T
+
+
+class HbasedT(nn.Module):
+    def __init__(self, dim):
+        super(HbasedT, self).__init__()
+        self.prescale=False
+        # Init params
+        self.b = nn.Parameter(torch.Tensor([1.0]))
+        self.w = nn.Parameter(torch.Tensor([1.0]))
+        self.t = nn.Parameter(torch.Tensor([1.0]))
+
+        self.dim = dim
+    
+    def forward(self, x):
+        with torch.no_grad():
+            H = torch_entropy(x)/np.log(self.dim)
+
+        T = (torch.tanh(H * self.w + self.b) + 1) * self.t
+        return T
+
+
+class HlogbasedT(nn.Module):
+    def __init__(self, dim):
+        super(HlogbasedT, self).__init__()
+        self.prescale=False
+        # Init params
+        self.b = nn.Parameter(torch.Tensor([.1]))
+        self.w = nn.Parameter(torch.Tensor([.1]))
+
+        self.dim = dim
+    
+    def forward(self, x):
+        with torch.no_grad():
+            logH = torch.log(torch_entropy(x)/np.log(self.dim))
+
+        T = softplus(logH * self.w + self.b)
+        return T
+
+
+class HnLinearT(nn.Module):
+    def __init__(self, dim):
+        super(HnLinearT, self).__init__()
+        self.prescale=False
+
+        # Init params
+        self.b = nn.Parameter(torch.Tensor([.1]))
+        self.wh = nn.Parameter(torch.Tensor([.1]))
+        self.W = nn.Parameter(torch.randn(dim)/(dim))
+
+        self.dim = dim
+
+    def forward(self, x):
+        with torch.no_grad():
+            logH = torch.log(torch_entropy(x)/np.log(self.dim))
+
+        T = softplus(x @ self.W + logH * self.wh + self.b)
+        return T
+
+
+class DNNbasedT(nn.Module):
+    def __init__(self, dim, hs=None):
+        super(DNNbasedT, self).__init__()
+        self.prescale=False
+        # Init params
+
+        if hs is None:
+            hs = [int(np.sqrt(dim))]
+
+        hs = [dim] + hs + [1]
+
+        self.fcs = nn.ModuleList([nn.Linear(inp, out) for (inp, out) in zip(hs[:-1], hs[1:])])
+
+        self.dim = dim
+        
+    def forward(self, x):
+
+        for fc in self.fcs[:-1]:
+            x = torch.relu(fc(x))
+            
+        T = softplus(self.fcs[-1](x))
+        return T
+
+
+# ### NN models
 
 class LeNet5(nn.Module):
 

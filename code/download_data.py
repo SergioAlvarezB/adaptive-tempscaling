@@ -8,7 +8,7 @@ import numpy as np
 
 from torch.utils import data
 from torchvision import transforms
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, SVHN
 import torchvision.transforms as transforms
 
 from utils import check_path
@@ -16,14 +16,17 @@ from utils import check_path
 
 CIFAR10_PATH = '../data/CIFAR10'
 CIFAR10C_PATH = '../data'
+SVHN_PATH = '../data/SVHN'
 
 CIFAR10C_URL = 'https://zenodo.org/record/2535967/files/CIFAR-10-C.tar'
 
 check_path(CIFAR10_PATH)
 check_path(CIFAR10C_PATH)
+check_path(SVHN_PATH)
 
-
-# Download CIFAR10-C
+##############################################
+############ Download CIFAR10-C ##############
+##############################################
 target_path = os.path.join(CIFAR10C_PATH, 'CIFAR-10-C.tar')
 print('Downloading CIFAR10-C...')
 with open(target_path, 'wb') as f:
@@ -47,15 +50,17 @@ tarf.close()
 os.remove(target_path)
 print('Done')
 
+##############################################
+############ Download CIFAR10 ################
+##############################################
+print('Downloading CIFAR10...')
+
 transforms_data=transforms.Compose([
     transforms.ToTensor(),
 ])
 
 train = CIFAR10(CIFAR10_PATH, train=True, download=True, transform=transforms_data)
 test = CIFAR10(CIFAR10_PATH, train=False, transform=transforms_data)
-
-
-
 
 # Divide into validation and train splits
 N = len(train)
@@ -92,3 +97,23 @@ for arrs, name in zip([(X_train, y_train), (X_val, y_val), (X_test, y_test)],
 
 os.remove(os.path.join(CIFAR10_PATH, 'cifar-10-python.tar.gz'))
 shutil.rmtree(os.path.join(CIFAR10_PATH, 'cifar-10-batches-py'))
+print('Done')
+
+##############################################
+############## Download SVHN #################
+##############################################
+
+print('Downloading SVHN...')
+
+svhn = SVHN(SVHN_PATH, split='test', download=True, transform=transforms_data)
+svhn = data.DataLoader(svhn, batch_size=len(svhn))
+
+X, y = next(iter(svhn))
+X, y = (255*X.numpy()).astype(np.uint8), y.numpy()
+X = np.transpose(X, (0, 2,3,1))
+
+np.save(os.path.join(SVHN_PATH, 'imas.npy'), X)
+np.save(os.path.join(SVHN_PATH, 'labels.npy'), y)
+
+os.remove(os.path.join(SVHN_PATH, 'test_32x32.mat'))
+print('Done')
