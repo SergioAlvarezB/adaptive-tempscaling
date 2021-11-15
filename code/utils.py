@@ -59,7 +59,6 @@ def predict_logits(model, dataloader, dev):
 
 
 def onehot_encode(X, n_classes=None):
-
     if torch.is_tensor(X):
         X = X.detach().cpu().numpy()
 
@@ -86,7 +85,6 @@ def torch_entropy(X, from_logits=True):
 
 
 def get_CIFAR10_C(dir_path):
-
     cifar10c = {}
     for cat in CIFAR10C_CATEGORIES:
         imas = np.load(os.path.join(dir_path, cat + '.npy'))
@@ -172,7 +170,6 @@ def calib_split(X, y, conf_th=None, apply_softmax=True):
 
 
 def compare_results(predictions, target, M=15, from_logits=True):
-
     res = {}
 
     if torch.is_tensor(target):

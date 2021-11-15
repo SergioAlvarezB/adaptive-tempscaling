@@ -16,22 +16,32 @@ class NanValues(Exception):
 
 
 class BTS:
-
+    """Implements Bin-wise Temperature Scaling with equal samples per bin from https://arxiv.org/abs/1908.11528"""
     def __init__(self, M=50):
         self.M = M
 
     def fit(self, X, y, v=False):
 
+        if not torch.is_tensor(X):
+            X = torch.as_tensor(X, dtype=torch.float32)
+
         with torch.no_grad():
-            lims = self.get_lims(X)
+            ixs, lims = self.get_lims(X)
+        self.lims = lims
 
-        
-
+        self.Ts = np.ones(self.M)
+        for i, ix in enumerate(ixs):
+            if any(ix):
+                try:
+                    ts_aux = TempScaling()
+                    ts_aux.fit(X[ix], y[ix], v=v);
+                    self.Ts[i] = ts_aux.T.detach().numpy()
+                except Exception as e:
+                    continue
 
 
     def get_lims(self, logits):
-
-        confs = torch.max(softmax(logits, dim=1), dim=1)
+        confs, preds = torch.max(softmax(logits, dim=1), dim=1)
 
         low_confs = confs[confs<0.999]
 
@@ -39,7 +49,53 @@ class BTS:
 
         lims = np.hstack((lims, [1]))
 
-        return lims
+        ## Compute idxs entropy per bin
+        ixs = []
+        for i, (low, high) in enumerate(zip(lims[:-1], lims[1:])):
+            ix = (low<confs) & (confs<=high)
+            
+            ixs.append(ix.numpy())
+
+        return ixs, lims
+
+
+    def __call__(self, x):
+        ## Compute entropy of samples
+        with torch.no_grad():
+            confs, preds = torch.max(softmax(x, dim=1), dim=1)
+
+        N, dim = x.shape
+        
+        X_cal = torch.zeros_like(x) + x
+        
+        for i, (low, high) in enumerate(zip(self.lims[:-1], self.lims[1:])):
+            ix = (low<=confs) & (confs<high)
+            if any(ix):
+                X_cal[ix] = x[ix]/self.Ts[i]
+                
+        return X_cal
+
+    def get_T(self, x):
+        if not torch.is_tensor(x):
+            x = torch.as_tensor(x, dtype=torch.float32)
+
+        with torch.no_grad():
+            confs = torch.max(softmax(x, dim=1), dim=1)
+        
+        Ts = torch.zeros(x.shape[0])
+        
+        for i, (low, high) in enumerate(zip(self.lims[:-1], self.lims[1:])):
+            ix = (low<=confs) & (confs<high)
+            if any(ix):
+                Ts[ix] = self.Ts[i]
+
+        return Ts.detach().numpy()
+
+    def predictive(self, x):
+        if not torch.is_tensor(x):
+            x = torch.as_tensor(x, dtype=torch.float32)
+            
+        return softmax(self.__call__(x), dim=-1)
 
 
 

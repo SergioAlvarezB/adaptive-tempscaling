@@ -6,10 +6,12 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.nn.functional import softmax as torch_softmax
+from code.models import HnLinearT
 
-from models import NanValues, TempScaling, AdaTS, ScaleT, LinearT, HbasedT, DNNbasedT, HlogbasedT, HistTS
-from utils import compute_metrics, check_path, load_precomputedlogits
-from adats_utils import fitCV_AdaTS, fitHistTS
+from models import NanValues, TempScaling, AdaTS, LinearT, DNNbasedT, HlogbasedT, BTS, EnsembleTS
+from utils import compute_metrics, check_path, load_precomputedlogits, onehot_encode
+from adats_utils import fitCV_AdaTS, fitAdaTS
+from mixNmatch_cal import ets_calibrate, mir_calibrate
 
 
 res_path = '../results/pretrained/'
@@ -41,12 +43,13 @@ models = [
 
 TSmodels = [
     'TS',
-    'HisTS'
-    'ScaleT',
+    'ETS',
+    'MIR',
+    'BTS',
+    'PTS',
     'LinearTS',
     'HTS',
-    'lHTS',
-    'DNNTs']
+    'HnLinearTS']
 
 res_nll = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
 res_ECE = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
@@ -76,38 +79,37 @@ for model in models:
         tempScaler = TempScaling()
         tempScaler.fit(X_val, Y_val)
 
-        ### Histogram based
-        hisTS = fitHistTS(X_val, Y_val,
-                        Ms=[5, 10, 15],
-                        iters=3)
+        TSmodels_predictive = {'TS': tempScaler.predictive}
 
-        tempScalerModels = {'TS': tempScaler,
-                            'HisTS': hisTS}
+        #### Mix-n-Match Baselines
+        TSmodels_predictive['ETS'] = lambda x: ets_calibrate(X_val, onehot_encode(Y_val), x, dim)
+        TSmodels_predictive['MIR'] = lambda x: mir_calibrate(X_val, onehot_encode(Y_val), x)
 
-        wds = np.array([1e-5, 1e-4, 1e-3, 1e-2, 0])
+        #### BTS baseline
+        bts = BTS()
+        bts.fit(X_val, Y_val)
+        TSmodels_predictive['BTS'] = bts.predictive
 
-        for TSmodel, TSclass in zip(TSmodels[2:],
-                                    [ScaleT, LinearT, HbasedT, HlogbasedT, DNNbasedT]):
+        ##### PTS baseline
+        print('\tFitting PTS...')
+        pts = AdaTS(DNNbasedT(dim, hs=[5, 5]))
+        pts = fitAdaTS(pts, X_val, Y_val, epochs=_epochs, batch_size=1000, lr=lr, v=True)
+        TSmodels_predictive['PTS'] = pts.predictive
 
-            print('Fitting TS model: {}'.format(TSmodel))
-            target_file = os.path.join(res_path, '{}_{}_{}.png'.format(dataset, model, TSmodel))
-            failed=True
-            while failed:
-                try:
-                    tempScalerModels[TSmodel] = fitCV_AdaTS(TSclass,
-                        X_val,
-                        Y_val,
-                        epochs=_epochs,
-                        batch_size=1000,
-                        lrs=lr,
-                        v=True,
-                        weight_decays=(wds*dim) if TSmodel in ['ScaleT', 'LinearTS', 'DNNTs'] else 0.,
-                        target_file=target_file,
-                        iters=3)
-                    failed = False
-                except NanValues:
-                    lr*=0.1
-                print('\n')
+        #### Our Models
+        lts = AdaTS(LinearT(dim, norm=False))
+        lts = fitAdaTS(lts, X_val, Y_val, epochs=_epochs, batch_size=1000, lr=1e-3, v=True)
+        TSmodels_predictive['LinearTS'] = lts.predictive
+
+        hts = AdaTS(HlogbasedT(dim))
+        hts = fitAdaTS(hts, X_val, Y_val, epochs=_epochs, batch_size=1000, lr=1e-3, v=True)
+        TSmodels_predictive['HTS'] = hts.predictive
+
+        hnlts = AdaTS(HnLinearT(dim))
+        hnlts = fitAdaTS(hnlts, X_val, Y_val, epochs=_epochs, batch_size=1000, lr=1e-4, v=True)
+        TSmodels_predictive['HnLinearTS'] = hnlts.predictive
+
+
 
         acc, ece, bri, nll = compute_metrics(X_test, Y_test, M=15)
 
@@ -115,10 +117,10 @@ for model in models:
         bris = []
         nlls = []
 
-        for label, TSmodel in tempScalerModels.items():
-            TSmetrics = compute_metrics(TSmodel.predictive(X_test),
+        for label, TSmodel in TSmodels_predictive.items():
+            TSmetrics = compute_metrics(TSmodel(X_test),
                                         Y_test,
-                                        M=15,
+                                        M=50,
                                         from_logits=False)
 
             eces.append(TSmetrics[1])
