@@ -5,7 +5,8 @@ import torch
 from torch import nn
 from torch.nn.functional import softmax, cross_entropy, softplus
 
-from utils import torch_entropy, binByEntropy
+from utils import torch_entropy, binByEntropy, onehot_encode
+from mixNmatch_cal import temperature_scaling
 
 
 class NanValues(Exception):
@@ -13,7 +14,6 @@ class NanValues(Exception):
 
 
 ## Non-Parametric Temp-Scaling
-
 
 class BTS:
     """Implements Bin-wise Temperature Scaling with equal samples per bin from https://arxiv.org/abs/1908.11528"""
@@ -30,15 +30,23 @@ class BTS:
         self.lims = lims
 
         self.Ts = np.ones(self.M)
+
+        N, dim = X.shape
+
+        
+        X = X.detach().cpu().numpy()
+
+        if torch.is_tensor(y):
+            y = y.detach().cpu().numpy()
+
         for i, ix in enumerate(ixs):
             if any(ix):
                 try:
-                    ts_aux = TempScaling()
-                    ts_aux.fit(X[ix], y[ix], v=v);
-                    self.Ts[i] = ts_aux.T.detach().numpy()
+                    self.Ts[i] = temperature_scaling(X[ix], onehot_encode(y[ix], n_classes=dim), 'ce')
+                    print('Fitted bin {:d}, with T: {:.2f}'.format(i, self.Ts[i]), end="\r")
                 except Exception as e:
+                    print(e)
                     continue
-
 
     def get_lims(self, logits):
         confs, preds = torch.max(softmax(logits, dim=1), dim=1)
@@ -57,7 +65,6 @@ class BTS:
             ixs.append(ix.numpy())
 
         return ixs, lims
-
 
     def __call__(self, x):
         ## Compute entropy of samples

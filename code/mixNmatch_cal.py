@@ -102,7 +102,6 @@ Output: calibrated prediction probabilities
 ##### Calibration: Temperature Scaling with MSE
 def ts_calibrate(logit,label,logit_eval,loss):
     t = temperature_scaling(logit,label,loss)
-    print("temperature = " +str(t))
     logit_eval = logit_eval/t
     p = np.exp(logit_eval)/np.sum(np.exp(logit_eval),1)[:,None]   
     return p
@@ -132,7 +131,7 @@ def ets_calibrate(logit,label,logit_eval,n_class,loss='mse', v=False):
 def mir_calibrate(logit,label,logit_eval):
     p = np.exp(logit)/np.sum(np.exp(logit),1)[:,None] 
     p_eval = np.exp(logit_eval)/np.sum(np.exp(logit_eval),1)[:,None]
-    ir = IsotonicRegression(out_of_bounds='clip')
+    ir = IsotonicRegression(out_of_bounds='clip', y_min=1e-10)
     y_ = ir.fit_transform(p.flatten(), (label.flatten()))
     yt_ = ir.predict(p_eval.flatten())
     
@@ -145,7 +144,7 @@ def irova_calibrate(logit,label,logit_eval):
     
 
     for ii in range(p_eval.shape[1]):
-        ir = IsotonicRegression(out_of_bounds='clip')
+        ir = IsotonicRegression(out_of_bounds='clip', y_min=1e-10)
         y_ = ir.fit_transform(p[:,ii], label[:,ii])
         p_eval[:,ii] = ir.predict(p_eval[:,ii])+1e-9*p_eval[:,ii]
     return p_eval

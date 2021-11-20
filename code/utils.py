@@ -72,7 +72,10 @@ def onehot_encode(X, n_classes=None):
 
     return onehot
 
-    
+
+def softmax(x, axis=None):
+    e_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
+    return e_x / e_x.sum(axis=axis, keepdims=True)
 
 
 def torch_entropy(X, from_logits=True):
