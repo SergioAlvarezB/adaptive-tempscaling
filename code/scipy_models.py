@@ -1,11 +1,64 @@
 import numpy as np
 from scipy import optimize
-from scipy.stats import entropy
 from mixNmatch_cal import temperature_scaling
 
 import torch
 
-from utils import onehot_encode, binByEntropy, softmax
+from utils import onehot_encode, binByEntropy, softmax, softplus, sigmoid, entropy
+
+
+###########################
+#### Base Temp-Scaling ####
+###########################
+def loss_ts(t, *args):
+    # unravel args
+    logit, label = args
+
+    # temp-scaling
+    logit = logit/t.reshape(-1, 1)
+
+    # softmax
+    p = np.clip(softmax(logit, axis=1), 1e-20, 1-1e-20)
+
+    # ce-loss
+    N = p.shape[0]
+    ce = -np.sum(label*np.log(p))
+    return ce
+
+
+def jac_ts(t, *args):
+    logits, onehot_target = args
+
+    preds = softmax(logits/t, axis=1)
+    grad = -(1/t**2)*np.sum(logits*(preds-onehot_target))
+    return grad
+
+
+class TS:
+    def __init__(self, dim):
+
+        self.dim = dim
+        
+        self.t = 1.0
+
+    def __call__(self, X):
+
+        return X/self.t
+
+    def fit(self, X, y, v=True):
+
+        res = optimize.minimize(loss_ts, self.t ,
+                                args=(X, onehot_encode(y, n_classes=self.dim)),
+                                jac=jac_ts,
+                                options={'disp': v})
+
+        self.t = res.x
+
+    def predictive(self, x):
+        if torch.is_tensor(x):
+            x = x.detach().cpu().numpy()
+            
+        return softmax(self.__call__(x), axis=-1)
 
 
 ###########################
@@ -17,17 +70,32 @@ def loss_lts(w, *args):
     w, b = w[:-1], w[-1]
 
     # temp-scaling
-    w /= np.linalg.norm(w)
-    t = np.log(np.exp(logit @ w + b) + 1.)
-    logit = logit/t.reshape(-1, 1)
+    x = (logit @ w + b).reshape([-1, 1])
+    t = softplus(x)
+    logit = logit/t
 
     # softmax
     p = np.clip(softmax(logit, axis=1), 1e-20, 1-1e-20)
 
     # ce-loss
-    N = p.shape[0]
-    ce = -np.sum(label*np.log(p))/N
+    ce = -np.sum(label*np.log(p))
     return ce
+
+
+def jac_lts(w, *args):
+    # unravel args
+    logits, onehot_target = args
+    w, b = w[:-1], w[-1]
+
+
+    x = (logits @ w + b).reshape([-1, 1])
+    t = softplus(x)
+    preds = softmax(logits/t, axis=1)
+    
+    grad_w = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x)*logits, axis=0)
+    grad_b = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x))
+
+    return np.append(grad_w, grad_b)
 
 
 class LTS:
@@ -45,10 +113,9 @@ class LTS:
 
     def fit(self, X, y, v=True):
 
-        res = optimize.minimize(loss_lts, (*self.w, self.b) ,
+        res = optimize.minimize(loss_lts, np.append(self.w, self.b) ,
                                 args=(X, onehot_encode(y, n_classes=self.dim)),
-                                method='SLSQP',
-                                tol=1e-12,
+                                jac=jac_lts,
                                 options={'disp': v})
 
         w = res.x
@@ -58,8 +125,9 @@ class LTS:
     def get_T(self, X):
         if torch.is_tensor(X):
             X = X.detach().cpu().numpy()
-        w = self.w/np.linalg.norm(self.w)
-        t = np.log(np.exp(X @ w + self.b) + 1.)
+
+        x = (X @ self.w + self.b).reshape([-1, 1])
+        t = softplus(x)
         return t
 
 
@@ -79,7 +147,8 @@ def loss_hts(w, *args):
     w, b = w[0], w[1]
     
     # temp-scaling
-    t = np.log(np.exp(lhs * w + b) + 1.)
+    x = w*lhs + b
+    t = softplus(x)
     logit = logit/t.reshape(-1, 1)
 
     # softmax
@@ -87,8 +156,22 @@ def loss_hts(w, *args):
 
     # ce-loss
     N = p.shape[0]
-    ce = -np.sum(label*np.log(p))/N
+    ce = -np.sum(label*np.log(p))
     return ce
+
+
+def jac_hts(w, *args):
+    logits, onehot_target, lhs = args
+    w, b = w[0], w[1]
+
+    x = w*lhs + b
+    t = softplus(x)
+    preds = softmax(logits/t, axis=1)
+    
+    grad_w = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x)*lhs)
+    grad_b = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x))
+    
+    return [grad_w, grad_b]
 
 
 class HTS:
@@ -111,10 +194,8 @@ class HTS:
 
         res = optimize.minimize(loss_hts, (self.w, self.b) ,
                                 args=(X, onehot_encode(y, n_classes=self.dim), lhs),
-                                method='Powell',
-                                tol=1e-17,
-                                options={'disp': v,
-                                         'maxiter':100000})
+                                jac=jac_hts,
+                                options={'disp': v})
 
         w = res.x
 
@@ -124,9 +205,97 @@ class HTS:
         if torch.is_tensor(X):
             X = X.detach().cpu().numpy()
 
+        lhs = np.log(entropy(X, axis=1, from_logits=True)/np.log(self.dim))
+
+        x = self.w*lhs + self.b
+        t = softplus(x)
+        
+        X = X/t.reshape(-1, 1)
+        return t
+
+
+    def predictive(self, x):
+        if torch.is_tensor(x):
+            x = x.detach().cpu().numpy()
+            
+        return softmax(self.__call__(x), axis=-1)
+
+
+##################################
+### Entropy and Linear Temp-Scaling ###
+##################################
+def loss_hnlts(w, *args):
+    # unravel args
+    logit, label, lhs = args
+    w, wh, b = w[:-2], w[-2], w[-1]
+    
+    # temp-scaling
+    x = ((logit @ w).reshape([-1, 1]) + wh*lhs + b)
+    t = softplus(x)
+    logit = logit/t.reshape(-1, 1)
+
+    # softmax
+    p = np.clip(softmax(logit, axis=1), 1e-20, 1-1e-20)
+
+    # ce-loss
+    N = p.shape[0]
+    ce = -np.sum(label*np.log(p))
+    return ce
+
+
+def jac_hnlts(w, *args):
+    # unravel args
+    logits, onehot_target, lhs = args
+    w, wh, b = w[:-2], w[-2], w[-1]
+    
+    # temp-scaling
+    x = ((logits @ w).reshape([-1, 1]) + wh*lhs + b)
+    t = softplus(x)
+    preds = softmax(logits/t, axis=1)
+    
+    grad_w = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x)*logits, axis=0)
+    grad_wh = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x)*lhs)
+    grad_b = np.sum(np.sum(-(1/t**2)*logits*(preds-onehot_target), axis=1, keepdims=True) * sigmoid(x))
+    
+    return np.append(grad_w, [grad_wh, grad_b])
+
+
+class HnLTS:
+    def __init__(self, dim):
+
+        self.dim = dim
+        
+        self.w = np.ones((dim, 1))/dim
+        self.wh = .01
+        self.b = .1
+
+    def __call__(self, X):
+        t = self.get_T(X)
+
+        return X/t.reshape(-1, 1)
+
+    def fit(self, X, y, v=True):
+
+        # precompute entropies
         lhs = np.log(entropy(softmax(X, axis=1), axis=1)/np.log(self.dim))
 
-        t = np.log(np.exp(lhs * self.w + self.b) + 1.)
+        res = optimize.minimize(loss_hnlts, np.append(self.w, [self.wh, self.b]) ,
+                                args=(X, onehot_encode(y, n_classes=self.dim), lhs),
+                                jac=jac_hnlts,
+                                options={'disp': v})
+
+        w = res.x
+
+        self.w, self.wh, self.b = w[:-2], w[-2], w[-1]
+
+    def get_T(self, X):
+        if torch.is_tensor(X):
+            X = X.detach().cpu().numpy()
+
+        lhs = np.log(entropy(X, axis=1, from_logits=True)/np.log(self.dim))
+
+        x = ((X @ self.w).reshape([-1, 1]) + self.wh*lhs + self.b)
+        t = softplus(x)
         
         X = X/t.reshape(-1, 1)
         return t
@@ -174,7 +343,7 @@ class HistTS:
 
     def __call__(self, x):
         ## Compute entropy of samples
-        Hs = entropy(softmax(x, axis=1), axis=1)
+        Hs = entropy(x, axis=1, from_logits=True).flatten()
 
         N, dim = x.shape
 

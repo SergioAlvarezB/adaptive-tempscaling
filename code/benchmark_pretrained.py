@@ -3,9 +3,10 @@ import time
 
 import pandas as pd
 
-from models import HnLinearT, TempScaling, AdaTS, LinearT, DNNbasedT, HlogbasedT, BTS, NanValues
+from models import AdaTS, DNNbasedT, NanValues
+from scipy_models import TS, LTS, HTS, HnLTS, HistTS, BTS
 from utils import compute_metrics, check_path, load_precomputedlogits, onehot_encode
-from adats_utils import fitCV_AdaTS, fitAdaTS
+from adats_utils import fitAdaTS
 from mixNmatch_cal import ets_calibrate, mir_calibrate
 
 
@@ -42,9 +43,9 @@ TSmodels = [
     'MIR',
     'BTS',
     'PTS',
-    'LinearTS',
+    'LTS',
     'HTS',
-    'HnLinearTS']
+    'HnLTS']
 
 res_nll = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
 res_ECE = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
@@ -71,7 +72,7 @@ for model in models:
         N, dim = X_train.shape
 
         ### Temp-Scal as baseline:
-        tempScaler = TempScaling()
+        tempScaler = TS()
         tempScaler.fit(X_val, Y_val)
 
         TSmodels_predictive = {'TS': tempScaler.predictive}
@@ -104,49 +105,24 @@ for model in models:
 
         #### Our Models
         print('\n\tFitting LTS...')
-        failed = True
-        curr_epochs = _epochs
-        curr_lr = 1e-3
-        while failed:
-            try:
-                lts = AdaTS(LinearT(dim, norm=False))
-                lts = fitAdaTS(lts, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
-                failed = False
-            except NanValues:
-                curr_epochs *= 2
-                curr_lr /=2
+        lts = LTS(dim)
+        lts.fit(X_val, Y_val, v=True)
+
         
-        TSmodels_predictive['LinearTS'] = lts.predictive
+        TSmodels_predictive['LTS'] = lts.predictive
 
         print('\n\tFitting HTS...')
-        failed = True
-        curr_epochs = _epochs
-        curr_lr = 1e-3
-        while failed:
-            try:
-                hts = AdaTS(HlogbasedT(dim))
-                hts = fitAdaTS(hts, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
-                failed = False
-            except NanValues:
-                curr_epochs *= 2
-                curr_lr /=2
+        hts = HTS(dim)
+        hts.fit(X_val, Y_val, v=True)
+
         
         TSmodels_predictive['HTS'] = hts.predictive
 
         print('\n\tFitting HnLTS...')
-        failed = True
-        curr_epochs = _epochs
-        curr_lr = 1e-4
-        while failed:
-            try:
-                hnlts = AdaTS(HnLinearT(dim))
-                hnlts = fitAdaTS(hnlts, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
-                failed = False
-            except NanValues:
-                curr_epochs *= 2
-                curr_lr /=2
+        hnlts = HnLTS(dim)
+        hnlts.fit(X_val, Y_val, v=True)
         
-        TSmodels_predictive['HnLinearTS'] = hnlts.predictive
+        TSmodels_predictive['HnLTS'] = hnlts.predictive
 
 
 

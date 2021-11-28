@@ -73,9 +73,25 @@ def onehot_encode(X, n_classes=None):
     return onehot
 
 
+def entropy(x, axis=None, from_logits=False):
+    if from_logits:
+        x = softmax(x, axis=axis)
+        
+    H = -np.sum(x*np.log(x), axis=axis, keepdims=True)
+    return H
+
+
+def sigmoid(x):
+    return 1./(1+np.exp(-x))
+
+
 def softmax(x, axis=None):
     e_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
     return e_x / e_x.sum(axis=axis, keepdims=True)
+
+
+def softplus(x):
+    return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)
 
 
 def torch_entropy(X, from_logits=True):
