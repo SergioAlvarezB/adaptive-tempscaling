@@ -72,7 +72,7 @@ for model in models:
         N, dim = X_train.shape
 
         ### Temp-Scal as baseline:
-        tempScaler = TS()
+        tempScaler = TS(dim)
         tempScaler.fit(X_val, Y_val)
 
         TSmodels_predictive = {'TS': tempScaler.predictive}
