@@ -229,7 +229,7 @@ def compute_metrics(preds, target, M=15, from_logits=True):
     ece = compute_ece(probs, target, M=M)
     mce = compute_mce(probs, target, M=M)
     bri = compute_brier(probs, target)
-    nll = compute_nll(preds, target, from_logits=from_logits)
+    nll = compute_nll(probs, target, from_logits=False)
 
     return acc, ece, bri, nll, mce
 

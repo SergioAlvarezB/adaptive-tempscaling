@@ -126,7 +126,7 @@ for model in models:
 
 
 
-        acc, ece, bri, nll, mce = compute_metrics(X_test, Y_test, M=50)
+        acc, ece, bri, nll, mce = compute_metrics(X_test, Y_test, M=50, from_logits=True)
 
         eces = []
         bris = []

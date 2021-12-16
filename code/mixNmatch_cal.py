@@ -131,11 +131,12 @@ def ets_calibrate(logit,label,logit_eval,n_class,loss='mse', v=False):
 def mir_calibrate(logit,label,logit_eval):
     p = np.exp(logit)/np.sum(np.exp(logit),1)[:,None] 
     p_eval = np.exp(logit_eval)/np.sum(np.exp(logit_eval),1)[:,None]
-    ir = IsotonicRegression(out_of_bounds='clip', y_min=1e-10)
+    ir = IsotonicRegression(out_of_bounds='clip')
     y_ = ir.fit_transform(p.flatten(), (label.flatten()))
     yt_ = ir.predict(p_eval.flatten())
     
-    p = yt_.reshape(logit_eval.shape)+1e-9*p_eval
+    p = yt_.reshape(logit_eval.shape)+1e-4*p_eval
+    p /= p.sum(axis=1, keepdims=True)
     return p
 
 def irova_calibrate(logit,label,logit_eval):
