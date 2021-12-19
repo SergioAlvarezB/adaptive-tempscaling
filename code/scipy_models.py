@@ -116,7 +116,6 @@ class LTS:
         res = optimize.minimize(loss_lts, np.append(self.w, self.b) ,
                                 args=(X, onehot_encode(y, n_classes=self.dim)),
                                 jac=jac_lts,
-                                method='L-BFGS-B',
                                 options={'disp': v})
 
         w = res.x
@@ -196,7 +195,6 @@ class HTS:
         res = optimize.minimize(loss_hts, (self.w, self.b) ,
                                 args=(X, onehot_encode(y, n_classes=self.dim), lhs),
                                 jac=jac_hts,
-                                method='L-BFGS-B',
                                 options={'disp': v})
 
         w = res.x
@@ -284,7 +282,6 @@ class HnLTS:
         res = optimize.minimize(loss_hnlts, np.append(self.w, [self.wh, self.b]) ,
                                 args=(X, onehot_encode(y, n_classes=self.dim), lhs),
                                 jac=jac_hnlts,
-                                method='L-BFGS-B',
                                 options={'disp': v})
 
         w = res.x

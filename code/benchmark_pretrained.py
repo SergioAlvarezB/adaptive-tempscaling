@@ -4,7 +4,10 @@ import time
 import pandas as pd
 
 from models import AdaTS, DNNbasedT, NanValues
-from scipy_models import TS, LTS, HTS, HnLTS, HistTS, BTS
+from models import LTS as LTS_torch
+from models import HTS as HTS_torch
+from models import HnLTS as HnLTS_torch
+from scipy_models import TS, LTS, HTS, HnLTS, BTS
 from utils import compute_metrics, check_path, load_precomputedlogits, onehot_encode
 from adats_utils import fitAdaTS
 from mixNmatch_cal import ets_calibrate, mir_calibrate
@@ -45,7 +48,10 @@ TSmodels = [
     'PTS',
     'LTS',
     'HTS',
-    'HnLTS']
+    'HnLTS',
+    'LTS_torch',
+    'HTS_torch',
+    'HnLTS_torch']
 
 res_nll = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
 res_ECE = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
@@ -107,22 +113,63 @@ for model in models:
         print('\n\tFitting LTS...')
         lts = LTS(dim)
         lts.fit(X_val, Y_val, v=True)
-
-        
         TSmodels_predictive['LTS'] = lts.predictive
+
+        print('\n\tFitting LTS_torch...')
+        failed = True
+        curr_epochs = _epochs
+        curr_lr = lr
+        while failed:
+            try:
+                lts_t = AdaTS(LTS_torch(dim))
+                lts_t = fitAdaTS(lts_t, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
+                failed = False
+            except NanValues:
+                curr_epochs *= 2
+                curr_lr /=2
+        TSmodels_predictive['LTS_torch'] = lts_t.predictive
+
 
         print('\n\tFitting HTS...')
         hts = HTS(dim)
         hts.fit(X_val, Y_val, v=True)
+        TSmodels_predictive['HTS'] = hts.predictive
+
+        print('\n\tFitting HTS_torch...')
+        failed = True
+        curr_epochs = _epochs
+        curr_lr = lr
+        while failed:
+            try:
+                hts_t = AdaTS(HTS_torch(dim))
+                hts_t = fitAdaTS(hts_t, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
+                failed = False
+            except NanValues:
+                curr_epochs *= 2
+                curr_lr /=2
+        TSmodels_predictive['HTS_torch'] = hts_t.predictive
 
         
-        TSmodels_predictive['HTS'] = hts.predictive
+        
 
         print('\n\tFitting HnLTS...')
         hnlts = HnLTS(dim)
         hnlts.fit(X_val, Y_val, v=True)
-        
         TSmodels_predictive['HnLTS'] = hnlts.predictive
+
+        print('\n\tFitting HnLTS_torch...')
+        failed = True
+        curr_epochs = _epochs
+        curr_lr = lr
+        while failed:
+            try:
+                hnlts_t = AdaTS(HnLTS_torch(dim))
+                hnlts_t = fitAdaTS(hnlts_t, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
+                failed = False
+            except NanValues:
+                curr_epochs *= 2
+                curr_lr /=2
+        TSmodels_predictive['HnLTS_torch'] = hnlts_t.predictive
 
 
 

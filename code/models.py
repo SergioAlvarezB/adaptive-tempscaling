@@ -346,64 +346,24 @@ class AdaTS(nn.Module):
 
 # #### Temperature Models
 
-class ScaleT(nn.Module):
-    
+class LTS(nn.Module):
     def __init__(self, dim):
-        super(ScaleT, self).__init__()
-        
-        self.prescale=True
-
-        self.b = nn.Parameter(torch.Tensor([1.0]))
-        self.W = nn.Parameter(torch.randn(dim)/(100*dim))
-        self.dim = dim
-        
-    def forward(self, x):
-        T = (torch.tanh((x @ self.W)/self.dim + self.b) + 1)
-        return T
-
-
-class LinearT(nn.Module):
-    def __init__(self, dim, norm=True):
-        super(LinearT, self).__init__()
+        super(LTS, self).__init__()
         self.prescale=False
         # Init params
         self.b = nn.Parameter(torch.Tensor([1.0]))
         self.W = nn.Parameter(torch.randn(dim)/(dim))
 
         self.dim = dim
-        self.norm = norm
         
     def forward(self, x):
-        if self.norm:
-            W = self.W/torch.norm(self.W)
-        else:
-            W = self.W
-        T = softplus((x @ W) + self.b)
+        T = softplus((x @ self.W) + self.b)
         return T
 
 
-class HbasedT(nn.Module):
+class HTS(nn.Module):
     def __init__(self, dim):
-        super(HbasedT, self).__init__()
-        self.prescale=False
-        # Init params
-        self.b = nn.Parameter(torch.Tensor([1.0]))
-        self.w = nn.Parameter(torch.Tensor([1.0]))
-        self.t = nn.Parameter(torch.Tensor([1.0]))
-
-        self.dim = dim
-    
-    def forward(self, x):
-        with torch.no_grad():
-            H = torch_entropy(x)/np.log(self.dim)
-
-        T = (torch.tanh(H * self.w + self.b) + 1) * self.t
-        return T
-
-
-class HlogbasedT(nn.Module):
-    def __init__(self, dim):
-        super(HlogbasedT, self).__init__()
+        super(HTS, self).__init__()
         self.prescale=False
         # Init params
         self.b = nn.Parameter(torch.Tensor([.1]))
@@ -419,9 +379,9 @@ class HlogbasedT(nn.Module):
         return T
 
 
-class HnLinearT(nn.Module):
+class HnLTS(nn.Module):
     def __init__(self, dim):
-        super(HnLinearT, self).__init__()
+        super(HnLTS, self).__init__()
         self.prescale=False
 
         # Init params

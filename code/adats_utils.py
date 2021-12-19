@@ -4,6 +4,7 @@ from collections import Iterable
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn.functional import cross_entropy
 
 from models import NanValues, AdaTS, HistTS
@@ -64,6 +65,8 @@ def fitAdaTS(adaTS, X, Y,
         if optimizer=='adam' else \
             torch.optim.SGD(adaTS.modelT.parameters(), lr=lr, weight_decay=weight_decay)
 
+    scheduler = ReduceLROnPlateau(optim, 'min', patience=30, cooldown=20)
+
     if batch_size is None:
         batch_size=N
     n_steps = int(np.ceil(N/batch_size))
@@ -110,6 +113,12 @@ def fitAdaTS(adaTS, X, Y,
             print('On epoch: {:d}, NLL: {:.3e}, '.format(e, nll)
                     + 'at time: {:.2f}s'.format(time.time() - t0), end="\r")
         e += 1
+
+        
+        scheduler.step(nll)
+        if optim.param_groups[0]["lr"] < 1e-7:
+            print("Finish training, convergence reached. NLL: {:.2f} \n".format(nll))
+            break
 
         if target_file is not None:
             running_nll.append(nll)
