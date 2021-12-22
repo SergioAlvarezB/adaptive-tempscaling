@@ -423,6 +423,42 @@ class DNNbasedT(nn.Module):
         return T
 
 
+class PTS(nn.Module):
+    def __init__(self, dim, hs=[5, 5]):
+        super(PTS, self).__init__()
+        self.prescale=False
+
+        # Init params
+        if hs is None:
+            hs = [int(np.sqrt(dim))]
+
+        hs = [min(10, dim)] + hs + [1]
+
+        self.fcs = nn.ModuleList([nn.Linear(inp, out) for (inp, out) in zip(hs[:-1], hs[1:])])
+
+        """
+        with torch.no_grad():
+            for fc in self.fcs:
+                fc.weight /= 100
+                fc.bias /= 100
+
+            self.fcs[-1].bias += 0.8
+        """
+
+        self.dim = dim
+        
+    def forward(self, x):
+        x, _ = torch.sort(x, dim=1, descending=True)
+        if self.dim>10:
+            x = x[:, :10]
+
+        for fc in self.fcs[:-1]:
+            x = torch.relu(fc(x))
+            
+        T = softplus(self.fcs[-1](x))
+        return T
+
+
 # ### NN models
 
 class LeNet5(nn.Module):

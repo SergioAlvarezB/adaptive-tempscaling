@@ -135,8 +135,19 @@ def mir_calibrate(logit,label,logit_eval):
     y_ = ir.fit_transform(p.flatten(), (label.flatten()))
     yt_ = ir.predict(p_eval.flatten())
     
-    p = yt_.reshape(logit_eval.shape)+1e-4*p_eval
+
+    eps = 1e-9
+
+    p = yt_.reshape(logit_eval.shape)+eps*p_eval
     p /= p.sum(axis=1, keepdims=True)
+
+    ix = np.argmax(p_eval, axis=1)!=np.argmax(p, axis=1)
+    while any(ix):
+        eps *=10
+        p[ix] = p[ix]+eps*p_eval[ix]
+        p /= p.sum(axis=1, keepdims=True)
+        ix = np.argmax(p_eval, axis=1)!=np.argmax(p, axis=1)
+    
     return p
 
 def irova_calibrate(logit,label,logit_eval):

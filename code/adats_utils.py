@@ -8,7 +8,42 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn.functional import cross_entropy
 
 from models import NanValues, AdaTS, HistTS
-from utils import torch_entropy, torch_softmax
+
+
+def ece_loss(logits, target, M=10, reduction='sum'):
+    """"Computes ECE based loss as used in https://arxiv.org/abs/2102.12182"""
+
+    probs = torch.softmax(logits, dim=1)
+    N = probs.shape[0]
+
+    confs, preds = torch.max(probs, dim=1)
+
+
+    # Generate intervals
+    limits = np.linspace(0, 1, num=M+1)
+    lows, highs = limits[:-1], limits[1:]
+
+    ece = 0
+
+    for low, high in zip(lows, highs):
+
+        ix = (low < confs) & (confs <= high)
+        n = torch.sum(ix)
+        if n<1:
+            continue
+
+        curr_preds = preds[ix]
+        curr_confs = confs[ix]
+        curr_target = target[ix]
+
+        curr_acc = np.mean(curr_preds.cpu().numpy() == curr_target.cpu().numpy())
+
+        ece += n*torch.sqrt((torch.mean(curr_confs)-curr_acc)**2)
+
+    if reduction == 'mean':
+        ece /= N
+
+    return ece
 
 
 
@@ -17,10 +52,14 @@ def fitAdaTS(adaTS, X, Y,
              batch_size=None,
              lr=1e-2,
              optimizer='adam',
+             loss='nll',
              weight_decay=0,
              v=False,
              target_file=None,
              dev='cpu'):
+
+
+    assert loss in ['ece', 'nll']
 
     if not torch.is_tensor(X):
         X = torch.as_tensor(X, dtype=torch.float32)
@@ -29,6 +68,11 @@ def fitAdaTS(adaTS, X, Y,
         Y = torch.as_tensor(Y, dtype=torch.long)
 
     N = X.shape[0]
+
+    if loss == 'nll':
+        loss_f = cross_entropy
+    elif loss == 'ece':
+        loss_f = ece_loss
 
     # Pre-compute optimum T
     if adaTS.prescale:
@@ -40,17 +84,17 @@ def fitAdaTS(adaTS, X, Y,
         e=0
         t0 = time.time()
         while True:
-            loss = cross_entropy(adaTS(X, pretrain=True), Y, reduction='mean')
+            _loss = loss_f(adaTS(X, pretrain=True), Y, reduction='mean')
 
-            if loss != loss:
+            if _loss != _loss:
                 raise NanValues("Aborting training due to nan values")
 
             optim.zero_grad()
-            loss.backward()
+            _loss.backward()
             optim.step()
 
             if v and e % 10 == 4:
-                print('On epoch: {:d}, NLL: {:.3e}, '.format(e, N*loss.item())
+                print('On epoch: {:d}, NLL: {:.3e}, '.format(e, N*_loss.item())
                         + 'Temp: {:.3f}, '.format(adaTS.T.item())
                         + 'at time: {:.2f}s'.format(time.time() - t0), end="\r")
             _T[e%10] = adaTS.T.item()
@@ -84,7 +128,7 @@ def fitAdaTS(adaTS, X, Y,
         X = X[perm]
         Y = Y[perm]
 
-        nll = 0
+        cum_loss = 0
         for s in range(n_steps):
             x = X[s*batch_size:min((s+1)*batch_size, N)]
             y = Y[s*batch_size:min((s+1)*batch_size, N)]
@@ -97,37 +141,40 @@ def fitAdaTS(adaTS, X, Y,
 
             logits = adaTS(x)
 
-            _nll = cross_entropy(logits, y, reduction='mean')
+            _loss = loss_f(logits, y, reduction='mean')
 
-            if _nll != _nll:
+            if _loss != _loss:
                 raise NanValues("Aborting training due to nan values")
 
             # Train step
             optim.zero_grad()
-            _nll.backward()
+            _loss.backward()
             optim.step()
 
-            nll += n*_nll.item()
+            cum_loss += n*_loss.item()
+
+        if loss == 'ece':
+            cum_loss /= N
 
         if v and ((e % 10) == 4):
-            print('On epoch: {:d}, NLL: {:.3e}, '.format(e, nll)
+            print('On epoch: {:d}, loss: {:.3e}, '.format(e, cum_loss)
                     + 'at time: {:.2f}s'.format(time.time() - t0), end="\r")
         e += 1
 
         
-        scheduler.step(nll)
+        scheduler.step(cum_loss)
         if optim.param_groups[0]["lr"] < 1e-7:
-            print("Finish training, convergence reached. NLL: {:.2f} \n".format(nll))
+            print("\nFinish training, convergence reached. Loss: {:.2f} \n".format(cum_loss))
             break
 
         if target_file is not None:
-            running_nll.append(nll)
+            running_nll.append(cum_loss)
 
     if target_file is not None:
         fig, ax = plt.subplots()
         ax.plot(running_nll)
         ax.set_xlabel('Epochs')
-        ax.set_ylabel('NLL')
+        ax.set_ylabel('Loss')
         try:
             fig.savefig(target_file, dpi=300)
 
