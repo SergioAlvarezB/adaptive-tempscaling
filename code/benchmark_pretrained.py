@@ -3,7 +3,7 @@ import time
 
 import pandas as pd
 
-from models import AdaTS, DNNbasedT, NanValues
+from models import AdaTS, PTS, NanValues
 from models import LTS as LTS_torch
 from models import HTS as HTS_torch
 from models import HnLTS as HnLTS_torch
@@ -46,6 +46,7 @@ TSmodels = [
     'MIR',
     'BTS',
     'PTS',
+    'PTS_ece',
     'LTS',
     'HTS',
     'HnLTS',
@@ -100,7 +101,7 @@ for model in models:
         curr_lr = lr
         while failed:
             try:
-                pts = AdaTS(DNNbasedT(dim, hs=[5, 5]))
+                pts = AdaTS(PTS(dim))
                 pts = fitAdaTS(pts, X_val, Y_val, epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
                 failed = False
             except NanValues:
@@ -108,6 +109,23 @@ for model in models:
                 curr_lr /=2
 
         TSmodels_predictive['PTS'] = pts.predictive
+
+
+        ##### PTS-ECE baseline
+        print('\n\tFitting PTS...')
+        failed = True
+        curr_epochs = _epochs
+        curr_lr = lr
+        while failed:
+            try:
+                pts_ece = AdaTS(PTS(dim))
+                pts_ece = fitAdaTS(pts_ece, X_val, Y_val, loss='ece', epochs=curr_epochs, batch_size=1000, lr=curr_lr, v=True)
+                failed = False
+            except NanValues:
+                curr_epochs *= 2
+                curr_lr /=2
+
+        TSmodels_predictive['PTS_ece'] = pts_ece.predictive
 
         #### Our Models
         print('\n\tFitting LTS...')
