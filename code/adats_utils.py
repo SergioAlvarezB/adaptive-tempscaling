@@ -107,9 +107,9 @@ def fitAdaTS(adaTS, X, Y,
 
     optim = torch.optim.Adam(adaTS.modelT.parameters(), lr=lr, weight_decay=weight_decay) \
         if optimizer=='adam' else \
-            torch.optim.SGD(adaTS.modelT.parameters(), lr=lr, weight_decay=weight_decay)
+            torch.optim.SGD(adaTS.modelT.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9, nesterov=True)
 
-    scheduler = ReduceLROnPlateau(optim, 'min', patience=30, cooldown=20)
+    scheduler = ReduceLROnPlateau(optim, 'min', patience=100, cooldown=50)
 
     if batch_size is None:
         batch_size=N
