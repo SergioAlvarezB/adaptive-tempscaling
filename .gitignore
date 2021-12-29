@@ -7,3 +7,4 @@
 # Ignore data
 data/
 trained_models/
+results/

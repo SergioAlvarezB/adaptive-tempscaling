@@ -181,6 +181,8 @@ def fitAdaTS(adaTS, X, Y,
         except:
             print('Couldnt save training to {}'.format(target_file))
 
+        plt.close()
+
     return adaTS.cpu()
 
 
