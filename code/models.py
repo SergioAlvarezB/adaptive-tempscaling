@@ -361,6 +361,22 @@ class LTS(nn.Module):
         return T
 
 
+class LTSv2(nn.Module):
+    def __init__(self, dim):
+        super(LTSv2, self).__init__()
+        self.prescale=False
+        # Init params
+        self.b = nn.Parameter(torch.Tensor([1.0]))
+        self.W = nn.Parameter(torch.randn(dim-1)/(dim))
+
+        self.dim = dim
+        
+    def forward(self, x):
+        W = torch.cat((self.W, -torch.sum(self.W, 0, keepdim=True)))
+        T = softplus((x @ W) + self.b)
+        return T
+
+
 class HTS(nn.Module):
     def __init__(self, dim):
         super(HTS, self).__init__()
