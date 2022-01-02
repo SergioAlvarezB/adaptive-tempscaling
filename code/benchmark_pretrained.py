@@ -2,13 +2,14 @@ import os
 import time
 
 import pandas as pd
+from utils import softmax
 
 from models import AdaTS, PTS, NanValues
 from models import LTS as LTS_torch
 from models import HTS as HTS_torch
 from models import HnLTS as HnLTS_torch
 from scipy_models import TS, LTS, HTS, HnLTS, BTS
-from utils import compute_metrics, check_path, load_precomputedlogits, onehot_encode
+from utils import compute_metrics, check_path, load_precomputedlogits, onehot_encode, compute_ece
 from adats_utils import fitAdaTS
 from mixNmatch_cal import ets_calibrate, mir_calibrate
 
@@ -53,6 +54,7 @@ for i in range(10):
 
     res_nll = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
     res_ECE = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
+    res_ECE15 = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
     res_bri = pd.DataFrame(columns=['Dataset', 'Model', 'Uncalibrated'] + TSmodels)
 
     t0 = time.time()
@@ -226,10 +228,12 @@ for i in range(10):
 
 
             acc, ece, bri, nll, mce = compute_metrics(X_test, Y_test, M=50, from_logits=True)
+            ece_15 = (compute_ece(softmax(X_test, axis=-1), Y_test))
 
             eces = []
             bris = []
             nlls = []
+            eces_15 = []
 
             for label, TSmodel in TSmodels_predictive.items():
                 TSmetrics = compute_metrics(TSmodel(X_test),
@@ -237,12 +241,13 @@ for i in range(10):
                                             M=50,
                                             from_logits=False)
 
+                eces_15.append(compute_ece(TSmodel(X_test), Y_test))
                 eces.append(TSmetrics[1])
                 bris.append(TSmetrics[2])
                 nlls.append(TSmetrics[3])
 
 
-
+            res_ECE15.loc[ix] = [dataset, model, ece_15] + eces_15
             res_ECE.loc[ix] = [dataset, model, ece] + eces
             res_nll.loc[ix] = [dataset, model, nll] + nlls
             res_bri.loc[ix] = [dataset, model, bri] + bris
@@ -250,6 +255,7 @@ for i in range(10):
             ix += 1
             
 
+    res_ECE15.to_csv('../results/pretrained/logitsJuan_ECE15_reg_{:d}.csv'.format(i))
     res_ECE.to_csv('../results/pretrained/logitsJuan_ECE_reg_{:d}.csv'.format(i))
     res_nll.to_csv('../results/pretrained/logitsJuan_NLL_reg_{:d}.csv'.format(i))
     res_bri.to_csv('../results/pretrained/logitsJuan_BRI_reg_{:d}.csv'.format(i))
