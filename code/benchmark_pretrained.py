@@ -18,7 +18,7 @@ res_path = '../results/pretrained/'
 
 check_path(res_path)
 
-for i in range(10):
+for i in range(20):
     datasets = [
         'cifar10',
         'cifar100',

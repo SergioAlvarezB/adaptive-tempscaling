@@ -340,7 +340,7 @@ def compute_nll(preds, target, from_logits=True, normalize=True):
     if from_logits:
         logits = log_softmax(preds)
     else:
-        logits = np.log(preds)
+        logits = np.log(np.clip(preds, 1e-9, 1-1e-9))
 
     if normalize:
         return -np.mean(logits[np.arange(logits.shape[0]), target])
