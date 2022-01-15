@@ -93,8 +93,8 @@ for i in range(50):
                 TSmodels_predictive = {'TS': tempScaler.predictive}
 
                 #### Mix-n-Match Baselines
-                TSmodels_predictive['ETS'] = lambda x: ets_calibrate(X_val, onehot_encode(Y_val), x, dim)
-                TSmodels_predictive['MIR'] = lambda x: mir_calibrate(X_val, onehot_encode(Y_val), x)
+                TSmodels_predictive['ETS'] = lambda x: ets_calibrate(X_val, onehot_encode(Y_val, n_classes=dim), x, dim)
+                TSmodels_predictive['MIR'] = lambda x: mir_calibrate(X_val, onehot_encode(Y_val, n_classes=dim), x)
 
                 #### BTS baseline
                 print('\tFitting BTS...')
