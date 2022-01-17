@@ -389,7 +389,7 @@ class HTS(nn.Module):
     
     def forward(self, x):
         with torch.no_grad():
-            logH = torch.log(torch_entropy(x)/np.log(self.dim))
+            logH = torch.clamp(torch.log(torch_entropy(x)/np.log(self.dim)), min=-9)
 
         T = softplus(logH * self.w + self.b)
         return T
@@ -409,7 +409,7 @@ class HnLTS(nn.Module):
 
     def forward(self, x):
         with torch.no_grad():
-            logH = torch.log(torch_entropy(x)/np.log(self.dim))
+            logH = torch.clamp(torch.log(torch_entropy(x)/np.log(self.dim)), min=-9)
 
         T = softplus(x @ self.W + logH * self.wh + self.b)
         return T

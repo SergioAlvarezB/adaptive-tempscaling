@@ -111,7 +111,7 @@ def fitAdaTS(adaTS, X, Y,
 
     scheduler = ReduceLROnPlateau(optim, 'min', patience=100, cooldown=50)
 
-    if batch_size is None:
+    if batch_size is None or batch_size>N:
         batch_size=N
     n_steps = int(np.ceil(N/batch_size))
     e=0

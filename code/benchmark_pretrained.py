@@ -53,7 +53,7 @@ for i in range(50):
         'HTS_torch',
         'HnLTS_torch']
 
-    Ns = [100, 1000]
+    Ns = [200, 1000]
 
     res_nll = pd.DataFrame(columns=['N', 'Dataset', 'Model', 'Uncalibrated'] + TSmodels)
     res_ECE = pd.DataFrame(columns=['N', 'Dataset', 'Model', 'Uncalibrated'] + TSmodels)
@@ -200,8 +200,10 @@ for i in range(50):
                         failed = False
                     except Exception as e:
                         if type(e) == NanValues:
+                            print('Restart training due to Nan values... \n')
                             curr_epochs *= 2
                             curr_lr /=2
+                        raise e
                 TSmodels_predictive['HTS_torch'] = hts_t.predictive
 
                 
