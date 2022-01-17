@@ -382,7 +382,7 @@ class HTS(nn.Module):
         super(HTS, self).__init__()
         self.prescale=False
         # Init params
-        self.b = nn.Parameter(torch.Tensor([.1]))
+        self.b = nn.Parameter(torch.Tensor([.8]))
         self.w = nn.Parameter(torch.Tensor([.1]))
 
         self.dim = dim
@@ -402,7 +402,7 @@ class HnLTS(nn.Module):
 
         # Init params
         self.b = nn.Parameter(torch.Tensor([.1]))
-        self.wh = nn.Parameter(torch.Tensor([.1]))
+        self.wh = nn.Parameter(torch.Tensor([.01]))
         self.W = nn.Parameter(torch.randn(dim)/(dim))
 
         self.dim = dim
