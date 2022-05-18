@@ -53,7 +53,7 @@ for i in range(50):
         'HTS_torch',
         'HnLTS_torch']
 
-    Ns = [200, 1000]
+    Ns = [500, 5000]
 
     res_nll = pd.DataFrame(columns=['N', 'Dataset', 'Model', 'Uncalibrated'] + TSmodels)
     res_ECE = pd.DataFrame(columns=['N', 'Dataset', 'Model', 'Uncalibrated'] + TSmodels)
@@ -265,7 +265,7 @@ for i in range(50):
                 ix += 1
             
 
-    res_ECE15.to_csv('../results/pretrained/logitsJuan_ECE15_red_{:d}.csv'.format(i))
-    res_ECE.to_csv('../results/pretrained/logitsJuan_ECE_red_{:d}.csv'.format(i))
-    res_nll.to_csv('../results/pretrained/logitsJuan_NLL_red_{:d}.csv'.format(i))
-    res_bri.to_csv('../results/pretrained/logitsJuan_BRI_red_{:d}.csv'.format(i))
+    res_ECE15.to_csv('../results/pretrained/logitsJuan_ECE15_red_5_{:d}.csv'.format(i))
+    res_ECE.to_csv('../results/pretrained/logitsJuan_ECE_red_5_{:d}.csv'.format(i))
+    res_nll.to_csv('../results/pretrained/logitsJuan_NLL_red_5_{:d}.csv'.format(i))
+    res_bri.to_csv('../results/pretrained/logitsJuan_BRI_red_5_{:d}.csv'.format(i))
