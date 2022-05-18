@@ -19,7 +19,7 @@ res_path = '../results/pretrained/'
 
 check_path(res_path)
 
-for i in range(50):
+for i in range(20):
     datasets = [
         'cifar10',
         'cifar100',
@@ -74,7 +74,7 @@ for i in range(50):
                     print('Configuration {}_{} not found.\n'.format(model, dataset))
                     continue
 
-                print('Start benchmarking for configuration {}_{} at time {:.1f}s\n'.format(model, dataset, time.time()-t0))
+                print('Start benchmarking for configuration {}_{} N={:d} of file {:d} at time {:.1f}s\n'.format(model, dataset, N, i, time.time()-t0))
 
                 X_train, Y_train = train
                 X_val, Y_val = validation
@@ -240,10 +240,10 @@ for i in range(50):
                 acc, ece, bri, nll, mce = compute_metrics(X_test, Y_test, M=50, from_logits=True)
                 ece_15 = (compute_ece(softmax(X_test, axis=-1), Y_test))
 
-                eces = []
-                bris = []
-                nlls = []
-                eces_15 = []
+                eces = {'N': N, 'Dataset': dataset, 'Model':model, 'Uncalibrated': ece}
+                bris = {'N': N, 'Dataset': dataset, 'Model':model, 'Uncalibrated': bri}
+                nlls = {'N': N, 'Dataset': dataset, 'Model':model, 'Uncalibrated': nll}
+                eces_15 = {'N': N, 'Dataset': dataset, 'Model':model, 'Uncalibrated': ece_15}
 
                 for label, TSmodel in TSmodels_predictive.items():
                     TSmetrics = compute_metrics(TSmodel(X_test),
@@ -251,18 +251,17 @@ for i in range(50):
                                                 M=50,
                                                 from_logits=False)
 
-                    eces_15.append(compute_ece(TSmodel(X_test), Y_test))
-                    eces.append(TSmetrics[1])
-                    bris.append(TSmetrics[2])
-                    nlls.append(TSmetrics[3])
+                    eces_15[label] = compute_ece(TSmodel(X_test), Y_test)
+                    eces[label] = TSmetrics[1]
+                    bris[label] = TSmetrics[2]
+                    nlls[label] = TSmetrics[3]
 
 
-                res_ECE15.loc[ix] = [N, dataset, model, ece_15] + eces_15
-                res_ECE.loc[ix] = [N, dataset, model, ece] + eces
-                res_nll.loc[ix] = [N, dataset, model, nll] + nlls
-                res_bri.loc[ix] = [N, dataset, model, bri] + bris
+                res_ECE15 = res_ECE15.append(eces_15, ignore_index=True)
+                res_ECE = res_ECE.append(eces, ignore_index=True)
+                res_nll = res_nll.append(nlls, ignore_index=True)
+                res_bri = res_bri.append(bris, ignore_index=True)
 
-                ix += 1
             
 
     res_ECE15.to_csv('../results/pretrained/logitsJuan_ECE15_red_5_{:d}.csv'.format(i))
