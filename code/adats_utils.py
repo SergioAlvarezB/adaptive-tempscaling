@@ -62,7 +62,7 @@ def fitAdaTS(adaTS, X, Y,
     assert loss in ['ece', 'nll']
 
     if not torch.is_tensor(X):
-        X = torch.as_tensor(X, dtype=torch.float32)
+        X = torch.as_tensor(X, dtype=torch.float64)
 
     if not torch.is_tensor(Y):
         Y = torch.as_tensor(Y, dtype=torch.long)
