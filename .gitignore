@@ -5,6 +5,7 @@
 *.png
 .env
 .python-version
+.DS_Store
 
 # Ignore data
 data/
