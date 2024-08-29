@@ -16,6 +16,10 @@ CIFAR10_mean = np.array([0.4914, 0.4822, 0.4465])
 CIFAR10_std = np.array([0.2023, 0.1994, 0.2010])
 
 
+class NanValues(Exception):
+    """"Custom exception to signal failed training"""
+
+
 class NumpyDataset(torch.utils.data.Dataset):
     """Class to create a Pytorch Dataset from Numpy data"""
 
@@ -101,6 +105,15 @@ def torch_entropy(X, from_logits=True):
     H = -torch.sum(X*torch.log(X), dim=1)
 
     return H
+
+def mutual_info(preds):
+    if torch.is_tensor(preds):
+        preds = preds.detach().cpu().numpy()
+        
+    H = entropy(np.mean(preds, axis=1), axis=-1)
+    E_Hpx = np.mean(entropy(preds, axis=-1), axis=1)
+    
+    return H - E_Hpx, H
 
 
 def get_CIFAR10_C(dir_path):
