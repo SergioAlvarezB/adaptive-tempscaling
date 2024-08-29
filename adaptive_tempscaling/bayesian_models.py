@@ -238,7 +238,7 @@ class BayesianTempScaling_N(nn.Module):
                    x,
                    n_samples=100,
                    step=10,
-                   return_list=False,
+                   reduce=True,
                    prior=False,
                    MAP=False):
 
@@ -253,7 +253,7 @@ class BayesianTempScaling_N(nn.Module):
             return preds
 
 
-        preds = 0.0 if not return_list else []
+        preds = 0.0 if reduce else []
         rem = n_samples
         k = 0
         while rem:
@@ -264,11 +264,11 @@ class BayesianTempScaling_N(nn.Module):
                 preds_r = self.softmax(self.prior_forward(x_r).detach(), dim=1)
             else:
                 preds_r = self.softmax(self.forward(x_r).detach(), dim=1)
-            if not return_list:
+            if reduce:
                 preds += sum(torch.split(preds_r, x.shape[0], dim=0))
             else:
                 preds += torch.split(preds_r, x.shape[0], dim=0)
-        return (preds/n_samples).float() if not return_list \
+        return (preds/n_samples).float() if reduce \
             else torch.stack(preds).permute(1,0,2)
 
 
